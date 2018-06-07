@@ -410,9 +410,16 @@ public class Chapter06 {
         return items;
     }
 
+
+    /**************************
+      redis 的 watch、multi、exex 只是乐观锁：在会在数据被其他客户端抢先修改了的情况下，通知加锁的客户端，让其撤销对数据的修改，而不会真正地把数据锁住。
+      所以需要 自制锁来
+      counting semaphore - 计数信号量：是 需要让多个客户端同时访问相同的信息 的最佳选择
+    ****************************/
     public String acquireLock(Jedis conn, String lockName) {
         return acquireLock(conn, lockName, 10000);
     }
+    /*redis使用setnx构建锁 */
     public String acquireLock(Jedis conn, String lockName, long acquireTimeout){
         String identifier = UUID.randomUUID().toString();
 
@@ -432,11 +439,14 @@ public class Chapter06 {
         return null;
     }
 
-    public String acquireLockWithTimeout(
-        Jedis conn, String lockName, long acquireTimeout, long lockTimeout)
-    {
+    /**
+      带有超时时间的锁
+    **/
+    public String acquireLockWithTimeout(Jedis conn, String lockName, long acquireTimeout, long lockTimeout){
+        //标识符
         String identifier = UUID.randomUUID().toString();
         String lockKey = "lock:" + lockName;
+        //超时时间
         int lockExpire = (int)(lockTimeout / 1000);
 
         long end = System.currentTimeMillis() + acquireTimeout;
@@ -445,6 +455,7 @@ public class Chapter06 {
                 conn.expire(lockKey, lockExpire);
                 return identifier;
             }
+            //检查过期时间，并在有需要时对其进行更新
             if (conn.ttl(lockKey) == -1) {
                 conn.expire(lockKey, lockExpire);
             }
@@ -454,12 +465,13 @@ public class Chapter06 {
             }catch(InterruptedException ie){
                 Thread.currentThread().interrupt();
             }
+
         }
 
         // null indicates that the lock was not acquired
         return null;
     }
-
+    /* 锁释放 */
     public boolean releaseLock(Jedis conn, String lockName, String identifier) {
         String lockKey = "lock:" + lockName;
 
